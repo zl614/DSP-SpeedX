@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>包裹清单拆分器 · 按车队发邮件</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#F3F6FA; --surface:#FFFFFF; --ink:#16222E; --muted:#66727F;
+    --hair:#E2E7ED; --track:#E4EAF0; --tint:#F1F4F8; --primary:#1B3A5B; --primaryDark:#142B43;
+    --primary-rgb:27,58,91; --onPrimary:#FFFFFF; --accent:#B0843A;
+    --ok:#1f7a4d; --err:#b3352f;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;transition:background .45s ease;}
+  .top-rule{height:6px;background:var(--primary);transition:background .45s ease;}
+  .wrap{max-width:960px;margin:0 auto;padding:22px 22px 64px;}
+
+  .nav{display:flex;gap:16px;font-family:var(--mono);font-size:12px;margin-bottom:18px;}
+  .nav a{color:var(--primary);text-decoration:none;border-bottom:1px solid transparent;}
+  .nav a:hover{border-bottom-color:var(--primary);}
+  .nav .cur{color:var(--muted);cursor:default;}
+
+  header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    border-bottom:1px solid var(--hair);padding-bottom:18px;margin-bottom:24px;}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin:0 0 7px;}
+  h1{font-size:clamp(22px,4vw,31px);font-weight:800;letter-spacing:-.015em;margin:0;}
+  .sub{color:var(--muted);font-size:13.5px;max-width:540px;margin:10px 0 0;}
+  .palchip{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:10px 12px;min-width:190px;}
+  .row1{display:flex;align-items:center;gap:8px;justify-content:space-between;}
+  .pal-k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);}
+  .pal-name{font-weight:800;font-size:14px;}
+  .pal-name .en{font-weight:500;color:var(--muted);font-size:11.5px;margin-left:5px;}
+  .swatches{display:flex;gap:5px;margin-top:9px;}
+  .swatches i{flex:1;height:12px;border-radius:3px;border:1px solid rgba(0,0,0,.06);}
+
+  section{margin-bottom:20px;}
+  .step-label{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:9px;margin:0 0 11px;}
+  .step-num{display:inline-grid;place-items:center;width:20px;height:20px;background:var(--primary);color:var(--onPrimary);border-radius:6px;font-size:11px;font-weight:800;}
+  .panel{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:18px;}
+
+  .drop{background:var(--surface);border:1.5px dashed var(--primary);border-radius:12px;padding:30px 20px;text-align:center;cursor:pointer;}
+  .drop:hover{background:rgba(var(--primary-rgb),.045);}
+  .drop.drag{background:rgba(var(--primary-rgb),.09);border-style:solid;}
+  .drop.has{border:1px solid var(--hair);text-align:left;padding:18px 20px;cursor:default;}
+  .drop input{display:none;}
+  .drop-title{font-weight:700;font-size:15px;margin:0;}
+  .drop-hint{color:var(--muted);font-size:12.5px;margin:6px 0 0;font-family:var(--mono);}
+  .fileline{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  .filechip{font-family:var(--mono);font-size:12.5px;background:rgba(var(--primary-rgb),.06);border:1px solid var(--hair);border-radius:8px;padding:6px 10px;word-break:break-all;}
+  .filemeta{color:var(--muted);font-size:12px;font-family:var(--mono);}
+  .relink{margin-left:auto;background:none;border:0;color:var(--primary);font:inherit;font-size:13px;cursor:pointer;text-decoration:underline;}
+
+  .config{display:grid;grid-template-columns:1.4fr 1.4fr .8fr;gap:15px;}
+  .field{display:flex;flex-direction:column;gap:6px;min-width:0;}
+  .field label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  select,input[type=number],input[type=text],input[type=email],textarea{font-family:var(--sans);font-size:14px;padding:9px 10px;border:1px solid rgba(var(--primary-rgb),.30);border-radius:8px;background:var(--surface);color:var(--ink);width:100%;}
+  input[type=number]{font-family:var(--mono);}
+  textarea{resize:vertical;line-height:1.55;}
+  select:focus,input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--primary);outline-offset:1px;}
+  .checks{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:18px;border-top:1px solid var(--hair);padding-top:13px;}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;}
+  .chk input{width:16px;height:16px;accent-color:var(--primary);cursor:pointer;}
+
+  .readout{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;margin-bottom:14px;}
+  .stat{border:1px solid var(--hair);border-top:3px solid var(--primary);border-radius:9px;padding:13px 15px;}
+  .stat.c2{border-top-color:var(--accent);} .stat.c3{border-top-color:var(--muted);}
+  .stat .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+  .stat .v{font-family:var(--mono);font-size:27px;font-weight:800;margin-top:4px;color:var(--primary);}
+  .stat.c2 .v{color:var(--ink);} .stat.c3 .v{color:var(--ink);font-size:15px;word-break:break-all;}
+
+  .note{font-size:12.5px;font-family:var(--mono);border-radius:7px;padding:8px 10px;margin-bottom:8px;}
+  .note.warn{color:#7c4a12;background:rgba(180,120,30,.10);}
+  .note.info{color:var(--muted);background:rgba(0,0,0,.035);}
+
+  .tablewrap{max-height:260px;overflow:auto;border:1px solid var(--hair);border-radius:9px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{position:sticky;top:0;z-index:2;background:var(--tint);text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:8px 12px;border-bottom:1.5px solid var(--primary);}
+  th.num,td.num{text-align:right;font-family:var(--mono);}
+  tbody td{padding:7px 12px;border-bottom:1px solid var(--hair);}
+  tbody tr:last-child td{border-bottom:0;}
+  .fname{font-family:var(--mono);word-break:break-all;}
+  .cnt{font-weight:800;color:var(--primary);font-family:var(--mono);}
+  .mailtable input{padding:6px 8px;font-size:12.5px;font-family:var(--mono);}
+  .mailtable .fl{font-family:var(--mono);font-size:12px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  tr.nomail .fl{color:#7c4a12;}
+
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;}
+  .mini-btn{font-size:12.5px;background:transparent;color:var(--ink);border:1px solid rgba(var(--primary-rgb),.35);border-radius:8px;padding:7px 12px;cursor:pointer;}
+  .mini-btn:hover{background:rgba(var(--primary-rgb),.06);}
+  .mail-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .mail-count{font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .mail-count b{color:var(--primary);}
+  .mail-count .miss{color:#7c4a12;font-weight:800;}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;}
+  .chip{font-family:var(--mono);font-size:10.5px;background:rgba(var(--primary-rgb),.07);border:1px solid var(--hair);border-radius:20px;padding:2px 8px;color:var(--muted);cursor:pointer;}
+  .preview{border:1px solid var(--hair);border-radius:9px;background:rgba(var(--primary-rgb),.03);padding:11px 12px;font-size:12.5px;}
+  .preview .pl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+  .preview .pv{font-family:var(--mono);font-size:12px;word-break:break-all;margin:1px 0 7px;}
+  .preview pre{font-family:var(--sans);font-size:12.5px;white-space:pre-wrap;margin:0;}
+  details summary{font-family:var(--mono);font-size:11.5px;color:var(--primary);cursor:pointer;}
+  details textarea{margin-top:9px;font-family:var(--mono);font-size:12px;}
+  .paste-res{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:7px;}
+
+  /* ---- send panel ---- */
+  .sendbox{border:1px solid var(--hair);border-radius:10px;padding:14px;background:var(--tint);}
+  .acct{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+  .dot{width:9px;height:9px;border-radius:50%;background:#c2c8d0;flex:0 0 auto;}
+  .dot.on{background:var(--ok);}
+  .acct-txt{font-family:var(--mono);font-size:12.5px;}
+  .acct-txt b{color:var(--ink);}
+  .devicecode{border:1px dashed var(--primary);border-radius:9px;padding:12px;background:var(--surface);margin-bottom:12px;}
+  .devicecode .code{font-family:var(--mono);font-size:23px;font-weight:800;letter-spacing:.14em;color:var(--primary);margin:6px 0;}
+  .devicecode a{color:var(--primary);font-family:var(--mono);font-size:12.5px;}
+  .sendbtns{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .go{font-weight:800;font-size:14.5px;background:var(--primary);color:var(--onPrimary);border:1px solid var(--primaryDark);border-radius:9px;padding:12px 22px;cursor:pointer;}
+  .go:hover:not(:disabled){background:var(--primaryDark);}
+  .go:disabled{opacity:.4;cursor:not-allowed;}
+  .go.ghost{background:transparent;color:var(--primary);border-color:rgba(var(--primary-rgb),.4);}
+  .go.ghost:hover:not(:disabled){background:rgba(var(--primary-rgb),.07);}
+  .go.danger{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .progwrap{margin-top:13px;}
+  .progbar{height:8px;background:var(--track);border-radius:20px;overflow:hidden;}
+  .progbar>i{display:block;height:100%;background:var(--primary);width:0;transition:width .18s;}
+  .proglist{max-height:190px;overflow:auto;margin-top:10px;font-family:var(--mono);font-size:12px;}
+  .pl-row{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--hair);}
+  .pl-row:last-child{border-bottom:0;}
+  .pl-row .s{width:16px;flex:0 0 auto;}
+  .pl-row.ok .s{color:var(--ok);}
+  .pl-row.err{color:var(--err);}
+  .pl-row .f{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .status{font-family:var(--mono);font-size:12.5px;color:var(--muted);}
+  .status.ok{color:var(--ok);font-weight:700;}
+  .status.err{color:var(--err);}
+
+  .hidden{display:none !important;}
+  footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--hair);color:var(--muted);font-size:11.5px;font-family:var(--mono);}
+  @media (max-width:760px){ .mail-grid{grid-template-columns:1fr;} .config{grid-template-columns:1fr;} .readout{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="top-rule"></div>
+<div class="wrap">
+
+  <nav class="nav">
+    <a href="/">← 操作员人效</a>
+    <a href="/exceptions">异常原因分析</a>
+    <span class="cur">· 包裹清单拆分器</span>
+  </nav>
+
+  <header class="top">
+    <div>
+      <p class="eyebrow">物流 · 本地工具</p>
+      <h1>包裹清单拆分器</h1>
+      <p class="sub">按「Last delivery fleet」把 Excel 拆成每个车队一个文件，然后直接发给各车队。数据只经过你本机的 relay。</p>
+    </div>
+    <div class="palchip">
+      <div class="row1"><span class="pal-k">今日配色</span></div>
+      <div class="pal-name" id="pal-name">—</div>
+      <div class="swatches" id="swatches"><i></i><i></i><i></i></div>
+    </div>
+  </header>
+
+  <!-- 1 file -->
+  <section>
+    <p class="step-label"><span class="step-num">1</span>选择文件</p>
+    <div id="drop" class="drop" tabindex="0">
+      <input id="file" type="file" accept=".xlsx,.xlsm,.xls">
+      <div id="drop-empty">
+        <p class="drop-title">拖入 Excel 文件，或点击选择</p>
+        <p class="drop-hint">.xlsx / .xlsm / .xls</p>
+      </div>
+      <div id="drop-full" class="fileline hidden">
+        <span class="filechip" id="f-name">—</span>
+        <span class="filemeta" id="f-meta">—</span>
+        <button class="relink" onclick="pickAgain(event)">更换文件</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 config -->
+  <section id="cfg-sec" class="hidden">
+    <p class="step-label"><span class="step-num">2</span>设置拆分</p>
+    <div class="panel config">
+      <div class="field"><label for="sheet">工作表</label><select id="sheet" onchange="onSheetChange()"></select></div>
+      <div class="field"><label for="col">拆分依据（列）</label><select id="col" onchange="recompute()"></select></div>
+      <div class="field"><label for="hrow">表头行</label><input id="hrow" type="number" min="1" value="1" onchange="onSheetChange()"></div>
+      <div class="checks">
+        <label class="chk"><input type="checkbox" id="opt-trim" checked onchange="recompute()"><span>合并仅首尾空格不同的名称</span></label>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 preview -->
+  <section id="prev-sec" class="hidden">
+    <p class="step-label"><span class="step-num">3</span>预览</p>
+    <div class="panel">
+      <div class="readout">
+        <div class="stat"><div class="k">车队数</div><div class="v" id="stat-files">0</div></div>
+        <div class="stat c2"><div class="k">数据行数</div><div class="v" id="stat-rows">0</div></div>
+        <div class="stat c3"><div class="k">拆分依据</div><div class="v" id="stat-col">—</div></div>
+      </div>
+      <div id="notes"></div>
+      <div class="tablewrap">
+        <table><thead><tr><th>文件名</th><th class="num">行数</th></tr></thead><tbody id="tbody"></tbody></table>
+      </div>
+      <div class="btnrow" style="margin-top:12px;">
+        <button class="mini-btn" onclick="downloadZip()">下载 ZIP（每个车队一个 Excel）</button>
+        <span class="status" id="zip-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 mail -->
+  <section id="mail-sec" class="hidden">
+    <p class="step-label"><span class="step-num">4</span>车队邮箱 + 邮件内容</p>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+        <div class="btnrow">
+          <button class="mini-btn" onclick="document.getElementById('map-file').click()">导入映射 CSV</button>
+          <button class="mini-btn" onclick="exportMapping()">导出映射 CSV</button>
+          <button class="mini-btn" onclick="clearMapping()">清空</button>
+          <input id="map-file" type="file" accept=".csv,.txt" class="hidden">
+        </div>
+        <span class="mail-count" id="mail-count"></span>
+      </div>
+      <div class="mail-grid">
+        <div>
+          <div class="tablewrap mailtable" style="max-height:280px;">
+            <table><thead><tr><th>车队</th><th class="num">行数</th><th>收件邮箱 (To)</th><th>抄送 CC</th></tr></thead>
+            <tbody id="mail-body"></tbody></table>
+          </div>
+          <details style="margin-top:12px;">
+            <summary>▸ 从 Excel 粘贴（车队 + 邮箱两列）</summary>
+            <textarea id="paste-area" rows="4" placeholder="HEFT-EWR&#9;dispatch@heft.com&#10;JDI-PHL&#9;ops@jdi.com"></textarea>
+            <div class="btnrow" style="margin-top:8px;"><button class="mini-btn" onclick="applyPaste()">应用</button></div>
+            <div class="paste-res" id="paste-res"></div>
+          </details>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px;">
+          <div class="field"><label for="tpl-subj">主题模板</label><input id="tpl-subj" type="text" oninput="renderMail()"></div>
+          <div class="field">
+            <label for="tpl-body">正文模板</label>
+            <textarea id="tpl-body" rows="7" oninput="renderMail()"></textarea>
+            <div class="chips">
+              <span class="chip" onclick="insertTag('{fleet}')">{fleet}</span>
+              <span class="chip" onclick="insertTag('{count}')">{count}</span>
+              <span class="chip" onclick="insertTag('{file}')">{file}</span>
+              <span class="chip" onclick="insertTag('{date}')">{date}</span>
+              <span class="chip" onclick="insertTag('{source}')">{source}</span>
+            </div>
+          </div>
+          <div class="preview">
+            <div class="pl">收件人</div><div class="pv" id="pv-to">—</div>
+            <div class="pl">主题</div><div class="pv" id="pv-subj">—</div>
+            <div class="pl">正文</div><pre id="pv-body">—</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 SEND -->
+  <section id="send-sec" class="hidden">
+    <p class="step-label"><span class="step-num">5</span>发送</p>
+    <div class="panel">
+      <div id="send-offline" class="note warn hidden"></div>
+      <div id="send-noconf" class="note warn hidden"></div>
+
+      <div class="sendbox" id="sendbox">
+        <div class="acct">
+          <span class="dot" id="acct-dot"></span>
+          <span class="acct-txt" id="acct-txt">邮箱未登录</span>
+          <button class="mini-btn" id="btn-signin" onclick="mailSignIn()">登录 Outlook 邮箱</button>
+          <button class="mini-btn hidden" id="btn-signout" onclick="mailSignOut()">退出</button>
+        </div>
+
+        <div class="devicecode hidden" id="devicecode">
+          <div style="font-size:12.5px;color:var(--muted);font-family:var(--mono);">① 打开下面这个网址，② 输入这串码，③ 用你的公司邮箱登录</div>
+          <div class="code" id="dc-code">—</div>
+          <a id="dc-link" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener">https://microsoft.com/devicelogin ↗</a>
+          <div style="font-size:12px;color:var(--muted);margin-top:7px;" id="dc-wait">等待你在浏览器里完成登录…</div>
+        </div>
+
+        <div class="sendbtns">
+          <button class="go ghost" id="btn-draft" onclick="sendAll('draft')" disabled>建草稿（推荐，先检查）</button>
+          <button class="go danger" id="btn-send" onclick="sendAll('send')" disabled>直接发送</button>
+          <span class="status" id="send-status"></span>
+        </div>
+
+        <div class="progwrap hidden" id="progwrap">
+          <div class="progbar"><i id="progbar-i"></i></div>
+          <div class="proglist" id="proglist"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>数据只在你本机 relay 与 Microsoft Graph 之间流动 · 不存密码（OAuth）· 配色每天随机更换</footer>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- palette ---------- */
+const PAL = [
+  {en:"Harbor",zh:"深港",bg:"#F3F6FA",ink:"#16222E",muted:"#66727F",hair:"#E2E7ED",track:"#E4EAF0",primary:"#1B3A5B",primaryDark:"#142B43",accent:"#B0843A"},
+  {en:"Pine",zh:"松林",bg:"#F4F6F1",ink:"#1D2A23",muted:"#6A756B",hair:"#E3E7DE",track:"#E6EAE1",primary:"#22503F",primaryDark:"#183A2D",accent:"#B5673B"},
+  {en:"Bordeaux",zh:"勃艮第",bg:"#F8F4F3",ink:"#291A1D",muted:"#7A6C6E",hair:"#ECE3E2",track:"#EEE5E4",primary:"#6E2436",primaryDark:"#521A28",accent:"#B0894A"},
+  {en:"Teal",zh:"深青",bg:"#F1F6F5",ink:"#15302F",muted:"#607170",hair:"#DEE9E7",track:"#E2ECEA",primary:"#0E4F52",primaryDark:"#0A3B3D",accent:"#CF6B4E"},
+  {en:"Aubergine",zh:"茄紫",bg:"#F6F3F7",ink:"#271B2B",muted:"#6F6473",hair:"#E8E1EA",track:"#EBE4EC",primary:"#4A2E52",primaryDark:"#38213F",accent:"#7C8B5A"},
+];
+const EPOCH=Math.floor(Date.UTC(2024,0,1)/86400000);
+function shuf(n,seed){let s=(seed^0x6d2b79f5)>>>0;const r=()=>{s=(s+0x6D2B79F5)|0;let t=Math.imul(s^(s>>>15),1|s);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};const a=Array.from({length:n},(_,i)=>i);for(let i=n-1;i>0;i--){const j=Math.floor(r()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function palToday(){const d=new Date();const day=Math.floor(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/86400000);const N=PAL.length,rel=day-EPOCH,tb=Math.floor(rel/N),pos=((rel%N)+N)%N;let prev=-1,p;for(let b=0;b<=tb;b++){p=shuf(N,b);if(p[0]===prev)p=p.slice(1).concat(p[0]);prev=p[N-1];}return PAL[p[pos]];}
+function blendW(hex,r){const n=parseInt(hex.slice(1),16),m=c=>Math.round(c*r+255*(1-r)),h=v=>v.toString(16).padStart(2,"0");return "#"+h(m(n>>16&255))+h(m(n>>8&255))+h(m(n&255));}
+function rgbOf(hex){const n=parseInt(hex.slice(1),16);return `${n>>16&255},${n>>8&255},${n&255}`;}
+(function(){const p=palToday(),s=document.documentElement.style;
+  s.setProperty("--bg",p.bg);s.setProperty("--ink",p.ink);s.setProperty("--muted",p.muted);
+  s.setProperty("--hair",p.hair);s.setProperty("--track",p.track);s.setProperty("--primary",p.primary);
+  s.setProperty("--primaryDark",p.primaryDark);s.setProperty("--primary-rgb",rgbOf(p.primary));
+  s.setProperty("--accent",p.accent);s.setProperty("--tint",blendW(p.primary,.07));
+  document.getElementById("pal-name").innerHTML=p.zh+' <span class="en">'+p.en+'</span>';
+  [...document.getElementById("swatches").children].forEach((el,i)=>el.style.background=[p.primary,p.accent,p.ink][i]);
+})();
+
+/* ---------- state ---------- */
+const STATE={wb:null,fileBase:"",groups:null,header:null};
+const MAIL={map:{}};
+const LS="spx_fleet_mail_map_v1";
+try{const s=localStorage.getItem(LS); if(s) MAIL.map=JSON.parse(s)||{};}catch(e){}
+let saveT=null;
+function saveMap(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(LS,JSON.stringify(MAIL.map));}catch(e){}},350);}
+
+const DEF_SUBJ="Pending Claims — {fleet} — {date}";
+const DEF_BODY="Hi {fleet} team,\n\nAttached is the pending claims list for {fleet} — {count} tracking numbers (source: {source}).\n\nPlease review each tracking number and reply with POD or a resolution.\n\nThank you,\nSpeedX EWR Operations";
+document.getElementById("tpl-subj").value=DEF_SUBJ;
+document.getElementById("tpl-body").value=DEF_BODY;
+
+/* ---------- helpers ---------- */
+const norm=s=>String(s==null?"":s).trim().toLowerCase();
+const fmt=n=>n.toLocaleString("en-US");
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function today(){const d=new Date(),p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+function sanitize(n){n=String(n).replace(/[\\/:*?"<>|\x00-\x1f]/g,"_").replace(/\s+/g," ").trim().replace(/[. ]+$/,"");return (n||"unnamed").slice(0,120);}
+function colL(i){let s="";i++;while(i>0){i--;s=String.fromCharCode(65+i%26)+s;i=Math.floor(i/26);}return s;}
+function fill(t,v){return String(t).replace(/\{(\w+)\}/g,(m,k)=>k in v?v[k]:m);}
+function b64Bytes(buf){const u8=buf instanceof Uint8Array?buf:new Uint8Array(buf);let bin="";const C=0x8000;for(let i=0;i<u8.length;i+=C)bin+=String.fromCharCode.apply(null,u8.subarray(i,i+C));return btoa(bin);}
+function aoa(sh){return XLSX.utils.sheet_to_json(STATE.wb.Sheets[sh],{header:1,raw:true,defval:null,blankrows:false});}
+function csvCell(v){const s=String(v==null?"":v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function csvRow(a){return a.map(csvCell).join(",");}
+function parseCSV(t){const R=[];let row=[],cur="",q=false;t=t.replace(/^\uFEFF/,"");
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){ if(c==='"'){ if(t[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else { if(c==='"')q=true; else if(c===","){row.push(cur);cur="";} else if(c==="\n"){row.push(cur);R.push(row);row=[];cur="";} else if(c!=="\r")cur+=c; }}
+  if(cur!==""||row.length){row.push(cur);R.push(row);}
+  return R.filter(r=>r.some(c=>String(c).trim()!==""));}
+
+/* ---------- file ---------- */
+const drop=document.getElementById("drop"),fileIn=document.getElementById("file");
+drop.addEventListener("click",()=>{if(!drop.classList.contains("has"))fileIn.click();});
+fileIn.addEventListener("change",e=>{if(e.target.files[0])loadFile(e.target.files[0]);});
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
+drop.addEventListener("drop",e=>{const f=e.dataTransfer.files[0];if(f)loadFile(f);});
+function pickAgain(e){e.stopPropagation();fileIn.value="";fileIn.click();}
+
+function loadFile(file){
+  STATE.fileBase=file.name.replace(/\.(xlsx|xlsm|xls)$/i,"");
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    try{ STATE.wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"}); }
+    catch(err){ alert("读不了这个文件，确认是有效的 Excel。"); return; }
+    document.getElementById("drop-empty").classList.add("hidden");
+    document.getElementById("drop-full").classList.remove("hidden");
+    drop.classList.add("has");
+    document.getElementById("f-name").textContent=file.name;
+    document.getElementById("f-meta").textContent=`${(file.size/1048576).toFixed(2)} MB · ${STATE.wb.SheetNames.length} sheet(s)`;
+    const sel=document.getElementById("sheet");sel.innerHTML="";let auto=0;
+    STATE.wb.SheetNames.forEach((n,i)=>{const o=document.createElement("option");o.value=n;o.textContent=n;sel.appendChild(o);
+      const a=aoa(n); if(a.length&&a[0].map(norm).includes("last delivery fleet"))auto=i;});
+    sel.selectedIndex=auto;
+    ["cfg-sec","prev-sec","mail-sec","send-sec"].forEach(id=>document.getElementById(id).classList.remove("hidden"));
+    onSheetChange();
+  };
+  rd.readAsArrayBuffer(file);
+}
+
+function onSheetChange(){
+  const sh=document.getElementById("sheet").value;
+  let hr=parseInt(document.getElementById("hrow").value,10);if(!(hr>=1))hr=1;
+  const a=aoa(sh); if(!a.length)return;
+  if(hr>a.length)hr=a.length;
+  const header=a[hr-1]||[]; STATE.header=header;
+  const cs=document.getElementById("col");cs.innerHTML="";let auto=-1;
+  header.forEach((h,i)=>{const o=document.createElement("option");o.value=String(i);
+    o.textContent=`${(h==null||h==="")?("Column "+(i+1)):String(h)}  ·  col ${colL(i)}`;cs.appendChild(o);
+    if(norm(h)==="last delivery fleet"&&auto<0)auto=i;});
+  if(auto>=0)cs.value=String(auto);
+  recompute();
+}
+
+function recompute(){
+  if(!STATE.wb)return;
+  const sh=document.getElementById("sheet").value;
+  let hr=parseInt(document.getElementById("hrow").value,10);if(!(hr>=1))hr=1;
+  const ci=parseInt(document.getElementById("col").value,10);
+  const trim=document.getElementById("opt-trim").checked;
+  const a=aoa(sh),header=STATE.header||[],data=a.slice(hr);
+  const g=new Map(); const raw=new Set(); let blank=0;
+  for(const r of data){
+    let v=r[ci]; const isB=v==null||String(v).trim()==="";
+    let k; if(isB){k="\u0000B";blank++;} else {raw.add(String(v));k=trim?String(v).trim():String(v);}
+    if(!g.has(k))g.set(k,[]); g.get(k).push(r);
+  }
+  const used=new Set();
+  const rows=[...g.entries()].map(([k,rs])=>{
+    const isB=k==="\u0000B", disp=isB?"(空白)":k;
+    let base=sanitize(isB?"(blank)":k),f=base,i=2;
+    while(used.has(f.toLowerCase())){f=base+"_"+i;i++;} used.add(f.toLowerCase());
+    return {key:k,display:disp,file:f,rows:rs,count:rs.length,isB};
+  }).sort((x,y)=>y.count-x.count||x.display.localeCompare(y.display));
+  STATE.groups={rows,header};
+
+  document.getElementById("stat-files").textContent=fmt(rows.length);
+  document.getElementById("stat-rows").textContent=fmt(data.length);
+  document.getElementById("stat-col").textContent=(header[ci]==null||header[ci]==="")?("col "+colL(ci)):String(header[ci]);
+
+  const nb=document.getElementById("notes");nb.innerHTML="";
+  const nonB=rows.filter(r=>!r.isB).length;
+  if(trim&&raw.size>nonB) nb.innerHTML+=`<div class="note warn">▲ 已把 ${raw.size} 个仅首尾空格不同的名称合并为 ${nonB} 组。</div>`;
+  if(blank>0) nb.innerHTML+=`<div class="note info">› 有 ${blank} 行该列为空，归入「(空白)」。</div>`;
+
+  const tb=document.getElementById("tbody");tb.innerHTML="";
+  rows.forEach(r=>{const tr=document.createElement("tr");
+    tr.innerHTML=`<td class="fname">${esc(r.file)}.xlsx</td><td class="num cnt">${fmt(r.count)}</td>`;tb.appendChild(tr);});
+
+  renderMailTable(); renderMail();
+}
+
+/* ---------- xlsx per fleet ---------- */
+function fleetXlsx(r){
+  const ws=XLSX.utils.aoa_to_sheet([STATE.groups.header,...r.rows]);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Sheet1");
+  return XLSX.write(wb,{bookType:"xlsx",type:"array"});
+}
+
+async function downloadZip(){
+  if(!STATE.groups)return;
+  const st=document.getElementById("zip-status"); st.textContent="打包中…"; st.className="status";
+  const zip=new JSZip(); const sum=[["File","Fleet","Rows","Email"]];
+  for(const r of STATE.groups.rows){
+    zip.file(r.file+".xlsx", fleetXlsx(r));
+    sum.push([r.file+".xlsx", r.display, r.count, (MAIL.map[r.key]||{}).to||""]);
+  }
+  const sws=XLSX.utils.aoa_to_sheet(sum),swb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(swb,sws,"Summary");
+  zip.file("_SUMMARY.xlsx",XLSX.write(swb,{bookType:"xlsx",type:"array"}));
+  const blob=await zip.generateAsync({type:"blob",compression:"DEFLATE"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download=sanitize(STATE.fileBase)+"__by_fleet.zip";document.body.appendChild(a);a.click();a.remove();
+  st.textContent=`✓ ${STATE.groups.rows.length} 个文件`; st.className="status ok";
+}
+
+/* ---------- mail mapping ---------- */
+function renderMailTable(){
+  const tb=document.getElementById("mail-body");tb.innerHTML="";
+  if(!STATE.groups)return;
+  STATE.groups.rows.forEach((r,i)=>{
+    const rec=MAIL.map[r.key]||{to:"",cc:""};
+    const tr=document.createElement("tr");
+    if(!String(rec.to||"").trim())tr.className="nomail";
+    tr.innerHTML=`<td class="fl" title="${esc(r.display)}">${esc(r.display)}</td><td class="num" style="color:var(--muted);font-size:11.5px;">${fmt(r.count)}</td>`+
+      `<td><input type="text" data-k="to" data-i="${i}" value="${esc(rec.to||"")}" placeholder="name@fleet.com"></td>`+
+      `<td><input type="text" data-k="cc" data-i="${i}" value="${esc(rec.cc||"")}"></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll("input").forEach(inp=>inp.addEventListener("input",e=>{
+    const key=STATE.groups.rows[+e.target.dataset.i].key;
+    if(!MAIL.map[key])MAIL.map[key]={to:"",cc:""};
+    MAIL.map[key][e.target.dataset.k]=e.target.value;
+    e.target.closest("tr").classList.toggle("nomail",!String(MAIL.map[key].to||"").trim());
+    saveMap(); renderMail();
+  }));
+}
+function withMail(){ return !STATE.groups?[]:STATE.groups.rows.filter(r=>String((MAIL.map[r.key]||{}).to||"").trim()); }
+function renderMail(){
+  if(!STATE.groups)return;
+  const f=withMail().length,t=STATE.groups.rows.length;
+  document.getElementById("mail-count").innerHTML=`已填 <b>${f}</b> / ${t}`+(t-f>0?` · <span class="miss">${t-f} 个没邮箱</span>`:"");
+  const pick=withMail()[0]||STATE.groups.rows[0]; if(!pick)return;
+  const rec=MAIL.map[pick.key]||{to:"",cc:""};
+  const v={fleet:pick.display,count:pick.count,file:pick.file+".xlsx",date:today(),source:STATE.fileBase};
+  document.getElementById("pv-to").textContent=(rec.to||"—")+(rec.cc?`  (cc: ${rec.cc})`:"");
+  document.getElementById("pv-subj").textContent=fill(document.getElementById("tpl-subj").value,v)||"—";
+  document.getElementById("pv-body").textContent=fill(document.getElementById("tpl-body").value,v)||"—";
+  updateSendBtns();
+}
+function insertTag(tag){const ta=document.getElementById("tpl-body");const s=ta.selectionStart??ta.value.length;
+  ta.value=ta.value.slice(0,s)+tag+ta.value.slice(ta.selectionEnd??s);ta.focus();ta.selectionStart=ta.selectionEnd=s+tag.length;renderMail();}
+function applyPaste(){
+  const txt=document.getElementById("paste-area").value,res=document.getElementById("paste-res");
+  if(!txt.trim()||!STATE.groups){res.textContent="";return;}
+  const idx=new Map(); STATE.groups.rows.forEach(r=>idx.set(norm(r.display),r.key));
+  let m=0,u=0;
+  txt.split(/\r?\n/).forEach(line=>{ if(!line.trim())return;
+    const p=line.includes("\t")?line.split("\t"):line.split(",");
+    const key=idx.get(norm(p[0]||"")),to=String(p[1]||"").trim(),cc=String(p[2]||"").trim();
+    if(key&&to){MAIL.map[key]={to,cc};m++;} else u++;});
+  res.textContent=m?`匹配到 ${m} 个车队${u?`，${u} 行没匹配上`:""}。`:"没匹配到任何车队，检查第一列是不是车队名。";
+  saveMap();renderMailTable();renderMail();
+}
+function exportMapping(){
+  if(!STATE.groups)return;
+  const L=[csvRow(["fleet","to","cc"])];
+  STATE.groups.rows.forEach(r=>{const rec=MAIL.map[r.key]||{to:"",cc:""};L.push(csvRow([r.display,rec.to||"",rec.cc||""]));});
+  const b=new Blob(["\uFEFF"+L.join("\r\n")],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="fleet_email_mapping.csv";
+  document.body.appendChild(a);a.click();a.remove();
+}
+document.getElementById("map-file").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f||!STATE.groups)return;
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    const rows=parseCSV(String(ev.target.result)); if(!rows.length)return;
+    const idx=new Map(); STATE.groups.rows.forEach(r=>idx.set(norm(r.display),r.key));
+    let s=0,m=0,u=0;
+    if(norm(rows[0][0])==="fleet"||norm(rows[0][0])==="车队")s=1;
+    for(let i=s;i<rows.length;i++){
+      const key=idx.get(norm(rows[i][0]||"")),to=String(rows[i][1]||"").trim(),cc=String(rows[i][2]||"").trim();
+      if(key&&to){MAIL.map[key]={to,cc};m++;} else if(rows[i][0])u++;}
+    document.getElementById("paste-res").textContent=m?`导入 ${m} 个车队${u?`，${u} 行没匹配上`:""}。`:"没匹配到任何车队。";
+    saveMap();renderMailTable();renderMail();
+  };
+  rd.readAsText(f,"utf-8"); e.target.value="";
+});
+function clearMapping(){ if(!STATE.groups)return;
+  STATE.groups.rows.forEach(r=>delete MAIL.map[r.key]); saveMap();renderMailTable();renderMail(); }
+
+/* ---------- SEND (via relay → Microsoft Graph) ---------- */
+const RELAY = location.protocol==="http:"||location.protocol==="https:";
+let MS={configured:false,signedIn:false,user:"",canDraft:true};
+
+async function refreshMailStatus(){
+  if(!RELAY){
+    MS={configured:false,signedIn:false,user:"",canDraft:false};
+    const w=document.getElementById("send-offline");
+    w.textContent="▲ 这个页面是直接双击打开的（file://），发不了邮件。请通过 relay 打开：启动 speedx_relay 后访问 http://127.0.0.1:5057/split";
+    w.classList.remove("hidden");
+    document.getElementById("sendbox").classList.add("hidden");
+    return;
+  }
+  try{ MS = await (await fetch("/mail/status")).json(); }
+  catch(e){ MS={configured:false,signedIn:false,user:"",canDraft:false}; }
+  const nc=document.getElementById("send-noconf");
+  if(!MS.configured){
+    nc.textContent="▲ 还没配置 Azure client_id → 把 graph_config.json 放到 relay 同目录，重启 relay 即可。（拆分和下载 ZIP 不受影响）";
+    nc.classList.remove("hidden");
+  } else nc.classList.add("hidden");
+  document.getElementById("acct-dot").classList.toggle("on",!!MS.signedIn);
+  document.getElementById("acct-txt").innerHTML = MS.signedIn ? `已登录：<b>${esc(MS.user||"")}</b>` : "邮箱未登录";
+  document.getElementById("btn-signin").classList.toggle("hidden",!!MS.signedIn);
+  document.getElementById("btn-signout").classList.toggle("hidden",!MS.signedIn);
+  updateSendBtns();
+}
+function updateSendBtns(){
+  const n=withMail().length;
+  const ready = RELAY && MS.configured && MS.signedIn && n>0;
+  const bd=document.getElementById("btn-draft"), bs=document.getElementById("btn-send");
+  bd.disabled = !ready || !MS.canDraft;
+  bs.disabled = !ready;
+  bd.textContent = n?`建 ${n} 封草稿（推荐，先检查）`:"建草稿（推荐，先检查）";
+  bs.textContent = n?`直接发送 ${n} 封`:"直接发送";
+}
+function setSend(msg,kind){const s=document.getElementById("send-status");s.textContent=msg||"";s.className="status"+(kind?" "+kind:"");}
+
+async function mailSignIn(){
+  setSend("");
+  let j;
+  try{ j = await (await fetch("/mail/signin-start",{method:"POST"})).json(); }
+  catch(e){ setSend("连不上 relay","err"); return; }
+  if(!j.ok){ setSend(j.msg||"登录失败","err"); return; }
+  const box=document.getElementById("devicecode");
+  document.getElementById("dc-code").textContent=j.userCode;
+  document.getElementById("dc-link").href=j.verificationUri;
+  document.getElementById("dc-link").textContent=j.verificationUri+" ↗";
+  box.classList.remove("hidden");
+  window.open(j.verificationUri,"_blank","noopener");
+  const iv=setInterval(async()=>{
+    let p;
+    try{ p = await (await fetch("/mail/signin-poll",{method:"POST"})).json(); }
+    catch(e){ return; }
+    if(p.state==="done"){ clearInterval(iv); box.classList.add("hidden"); await refreshMailStatus(); setSend("邮箱登录成功 ✓","ok"); }
+    else if(p.state==="error"||p.state==="expired"){ clearInterval(iv); box.classList.add("hidden"); setSend(p.msg||"登录失败","err"); }
+  }, Math.max(3,(j.interval||5))*1000);
+}
+async function mailSignOut(){ await fetch("/mail/signout",{method:"POST"}); await refreshMailStatus(); setSend(""); }
+
+async function sendAll(mode){
+  const list=withMail();
+  if(!list.length)return;
+  if(mode==="send" && !confirm(`确认直接发出 ${list.length} 封邮件？\n每封带的是不同车队的理赔数据，发出去撤不回来。\n\n（建议先「建草稿」检查一遍）`)) return;
+
+  document.getElementById("btn-draft").disabled=true;
+  document.getElementById("btn-send").disabled=true;
+  const pw=document.getElementById("progwrap"),pl=document.getElementById("proglist"),pb=document.getElementById("progbar-i");
+  pw.classList.remove("hidden"); pl.innerHTML=""; pb.style.width="0";
+
+  const subjT=document.getElementById("tpl-subj").value, bodyT=document.getElementById("tpl-body").value;
+  let ok=0, fail=0;
+  for(let i=0;i<list.length;i++){
+    const r=list[i], rec=MAIL.map[r.key];
+    const v={fleet:r.display,count:r.count,file:r.file+".xlsx",date:today(),source:STATE.fileBase};
+    const row=document.createElement("div"); row.className="pl-row";
+    row.innerHTML=`<span class="s">…</span><span class="f">${esc(r.display)}</span><span>${fmt(r.count)}</span>`;
+    pl.appendChild(row); pl.scrollTop=pl.scrollHeight;
+    setSend(`${mode==="send"?"发送":"建草稿"} ${i+1}/${list.length} …`);
+    try{
+      const b64=b64Bytes(fleetXlsx(r));
+      const res=await fetch("/mail/send-one",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({mode,to:rec.to,cc:rec.cc||"",subject:fill(subjT,v),body:fill(bodyT,v),
+                             fileName:r.file+".xlsx",fileB64:b64})});
+      const j=await res.json();
+      if(j.ok){ ok++; row.className="pl-row ok"; row.querySelector(".s").textContent="✓"; }
+      else{ fail++; row.className="pl-row err"; row.querySelector(".s").textContent="✗";
+            row.querySelector(".f").textContent=r.display+" — "+(j.msg||"失败");
+            if(j.needLogin){ setSend("登录过期了，请重新登录邮箱","err"); await refreshMailStatus(); break; } }
+    }catch(e){ fail++; row.className="pl-row err"; row.querySelector(".s").textContent="✗";
+               row.querySelector(".f").textContent=r.display+" — "+e.message; }
+    pb.style.width=Math.round((i+1)/list.length*100)+"%";
+  }
+  setSend(fail? `完成：成功 ${ok}，失败 ${fail}` : (mode==="send"?`✓ 已发出 ${ok} 封`:`✓ 已在 Outlook 草稿箱建好 ${ok} 封，检查后发送`), fail?"err":"ok");
+  updateSendBtns();
+}
+
+refreshMailStatus();
+</script>
+</body>
+</html>
